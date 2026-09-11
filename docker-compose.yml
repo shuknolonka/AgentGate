@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: agentgate-postgres
+
+    environment:
+      POSTGRES_USER: agentgate
+      POSTGRES_PASSWORD: agentgate_password
+      POSTGRES_DB: agentgate
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
