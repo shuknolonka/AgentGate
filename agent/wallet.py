@@ -1,56 +1,78 @@
-import requests
+import base64
+import json
+from pathlib import Path
 
-from wallet import sign_challenge
+from algosdk import account
+from nacl.signing import SigningKey
+
+WALLET_FILE = Path(__file__).parent / ".agent_wallet.json"
 
 
-BASE_URL = "http://127.0.0.1:8000"
-AGENT_ID = "research-agent-001"
+def load_or_create_wallet():
+    """
+    Create a local Algorand wallet for our demo agent.
+
+    The private key stays on this machine.
+    """
+
+    if WALLET_FILE.exists():
+        with open(WALLET_FILE, "r") as file:
+            wallet = json.load(file)
+
+        return wallet["private_key"], wallet["address"]
+
+    private_key, address = account.generate_account()
+
+    wallet = {
+        "private_key": private_key,
+        "address": address,
+    }
+
+    with open(WALLET_FILE, "w") as file:
+        json.dump(wallet, file, indent=2)
+
+    return private_key, address
 
 
-def main():
-    print("=== AgentGate Verification Test ===")
+def build_auth_message(agent_id, challenge):
+    return (
+        "AgentGate authentication\n"
+        f"Agent: {agent_id}\n"
+        f"Challenge: {challenge}"
+    ).encode("utf-8")
 
-    # 1. Ask AgentGate for a challenge
-    response = requests.post(
-        f"{BASE_URL}/api/agents/challenge",
-        params={"agent_id": AGENT_ID},
-    )
 
-    response.raise_for_status()
+def sign_challenge(agent_id, challenge):
+    private_key, address = load_or_create_wallet()
 
-    challenge_data = response.json()
-
-    challenge = challenge_data["challenge"]
-
-    print("\nChallenge received:")
-    print(challenge)
-
-    # 2. Sign the challenge with our wallet
-    wallet_address, signature = sign_challenge(
-        AGENT_ID,
+    message = build_auth_message(
+        agent_id,
         challenge,
     )
 
-    print("\nWallet:")
-    print(wallet_address)
-
-    print("\nChallenge signed successfully.")
-
-    # 3. Send the proof back to AgentGate
-    response = requests.post(
-        f"{BASE_URL}/api/agents/verify",
-        json={
-            "agent_id": AGENT_ID,
-            "wallet_address": wallet_address,
-            "signature": signature,
-            "challenge": challenge,
-        },
+    private_key_bytes = base64.b64decode(private_key)
+    signing_key = SigningKey(
+         private_key_bytes[:32]
     )
 
-    print("\nAgentGate response:")
-    print(response.status_code)
-    print(response.json())
+    signature = signing_key.sign(message).signature
+
+    signature_base64 = base64.b64encode(
+        signature
+    ).decode("utf-8")
+
+    return address, signature_base64
 
 
 if __name__ == "__main__":
-    main()
+    print("AgentGate test wallet")
+
+    private_key, address = load_or_create_wallet()
+
+    print()
+    print("Wallet address:")
+    print(address)
+
+    print()
+    print("Wallet created/loaded successfully.")
+    print("Private key is stored locally.")

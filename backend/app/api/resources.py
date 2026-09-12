@@ -5,6 +5,7 @@ from app.services.identity import identify_agent
 from app.services.policy_engine import evaluate_policy
 from app.services.rate_limit import check_rate_limit
 from app.services.payments import create_payment_requirement
+from app.services.verification import verify_agent_identity
 
 
 router = APIRouter(
@@ -28,6 +29,17 @@ def access_research_data(request: Request):
     # 1. Identify agent
     agent = identify_agent(request)
 
+    # 1.5 Verify wallet identity
+    verification = verify_agent_identity(
+        wallet_address=agent["wallet_address"],
+        signature=agent["signature"],
+        challenge=agent["challenge"],
+        agent_id=agent["agent_id"],
+    )
+
+    agent["verified"] = verification.verified
+    agent["verification_reason"] = verification.reason
+
     # 2. Rate limit
     rate_result = check_rate_limit(
         agent_id=agent["agent_id"],
@@ -46,8 +58,18 @@ def access_research_data(request: Request):
         )
 
     # 3. Evaluate policy
+    effective_agent_type = agent["agent_type"]
+
+    # A research claim is only treated as "research"
+    # when the wallet identity has been verified.
+    if (
+        agent["agent_type"] == "research"
+        and not agent["verified"]
+    ):
+        effective_agent_type = "unknown"
+
     decision = evaluate_policy(
-        agent_type=agent["agent_type"]
+        agent_type=effective_agent_type
     )
 
     # 4. BLOCK
